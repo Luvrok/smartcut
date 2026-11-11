@@ -130,32 +130,39 @@ class SubtitleCutter:
 
         out_packets = []
 
-        # TODO: This is the simplest implementation of subtitle cutting. Investigate more complex logic.
-        # We include subtitles for the whole original time if the subtitle start time is included in the output
-        # Good: simple, Bad: 1) if start is cut it's not shown at all 2) we can show a subtitle for too long if there is cut after it's shown
+        # A cue can span several segments (smartcut splits the range at the
+        # GOP edges), so emit the part that belongs to this segment and keep
+        # the cue for the next one.
         while self.current_packet_i < len(self.packets):
             p = self.packets[self.current_packet_i]
-            if p.pts < segment_start_pts:
-                # a cue that is still on screen when the segment starts
-                if p.pts + (p.duration or 0) > segment_start_pts:
-                    out_packets.append(p)
+            p_end = p.pts + (p.duration or 0)
+            if p_end <= segment_start_pts:
                 self.current_packet_i += 1
-            elif p.pts >= segment_start_pts and p.pts < segment_end_pts:
+            elif p.pts < segment_end_pts and p_end > segment_start_pts:
                 out_packets.append(p)
-                self.current_packet_i += 1
+                if p_end <= segment_end_pts:
+                    self.current_packet_i += 1
+                else:
+                    break
             else:
                 break
 
-        for packet in out_packets:
+        floor = int(self.segment_start_in_output / in_tb)
+        ceiling = floor + int((cut_segment.end_time - cut_segment.start_time) / in_tb)
+        result = []
+        for original in out_packets:
+            packet = copy_packet(original)
             packet.stream = self.out_stream
-            floor = int(self.segment_start_in_output / in_tb)
-            new_pts = int(packet.pts - segment_start_pts + self.segment_start_in_output / in_tb)
+            new_pts = int(packet.pts - segment_start_pts + floor)
             if new_pts < floor:
-                # started before the cut, shorten it to what is still shown
-                if packet.duration:
-                    packet.duration = max(0, packet.duration - (floor - new_pts))
                 new_pts = floor
+            if new_pts > ceiling:
+                new_pts = ceiling
             packet.pts = new_pts
+            end = new_pts + (packet.duration or 0)
+            if end > ceiling:
+                end = ceiling
+            packet.duration = max(0, end - new_pts)
 
             if packet.pts < self.prev_pts:
                 print("Correcting for too low pts in subtitle passthru. This should not happen.")
@@ -163,9 +170,10 @@ class SubtitleCutter:
             packet.dts = packet.pts
             self.prev_pts = packet.pts
             self.prev_dts = packet.dts
+            result.append(packet)
 
         self.segment_start_in_output += cut_segment.end_time - cut_segment.start_time
-        return out_packets
+        return result
 
     def finish(self) -> list[Packet]:
         return []
