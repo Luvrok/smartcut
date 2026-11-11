@@ -136,6 +136,9 @@ class SubtitleCutter:
         while self.current_packet_i < len(self.packets):
             p = self.packets[self.current_packet_i]
             if p.pts < segment_start_pts:
+                # a cue that is still on screen when the segment starts
+                if p.pts + (p.duration or 0) > segment_start_pts:
+                    out_packets.append(p)
                 self.current_packet_i += 1
             elif p.pts >= segment_start_pts and p.pts < segment_end_pts:
                 out_packets.append(p)
@@ -145,7 +148,14 @@ class SubtitleCutter:
 
         for packet in out_packets:
             packet.stream = self.out_stream
-            packet.pts = int(packet.pts - segment_start_pts + self.segment_start_in_output / in_tb)
+            floor = int(self.segment_start_in_output / in_tb)
+            new_pts = int(packet.pts - segment_start_pts + self.segment_start_in_output / in_tb)
+            if new_pts < floor:
+                # started before the cut, shorten it to what is still shown
+                if packet.duration:
+                    packet.duration = max(0, packet.duration - (floor - new_pts))
+                new_pts = floor
+            packet.pts = new_pts
 
             if packet.pts < self.prev_pts:
                 print("Correcting for too low pts in subtitle passthru. This should not happen.")
