@@ -286,6 +286,11 @@ class VideoCutter:
             else:
                 profile = profile.lower().replace(':', '').replace(' ', '')
 
+        # Lossless cannot be signalled in the source profile (x264 refuses High
+        # for instance), the encoder picks the profile it needs.
+        if self.video_settings.quality == VideoExportQuality.LOSSLESS:
+            profile = None
+
         # Get CRF value for quality setting
         crf_value = get_crf_for_quality(self.video_settings.quality)
 
@@ -428,6 +433,11 @@ class VideoCutter:
         if muxing_codec.bit_rate_tolerance is not None:
             enc_codec.bit_rate_tolerance = muxing_codec.bit_rate_tolerance
         enc_codec.codec_tag = muxing_codec.codec_tag
+        # keep the colour description of the source on the re-encoded parts
+        for attr in ('color_primaries', 'color_trc', 'colorspace', 'color_range'):
+            value = getattr(muxing_codec, attr, None)
+            if value is not None:
+                setattr(enc_codec, attr, value)
         enc_codec.thread_type = "FRAME"
         self.enc_last_pts = -1
         self.enc_codec = enc_codec

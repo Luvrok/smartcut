@@ -232,6 +232,11 @@ time formats:
     parser.add_argument('--frames', action='store_true',
                        help="Interpret --keep/--cut values as frame numbers instead of times. "
                             "Frames are zero-indexed. Use -1 for the last frame")
+    parser.add_argument('--quality', choices=['low', 'normal', 'high', 'indistinguishable', 'near-lossless', 'lossless'],
+                       default='normal', metavar='QUALITY',
+                       help="Quality of the re-encoded parts (default: %(default)s)")
+    parser.add_argument('--audio', choices=['passthru', 'none'], default='passthru',
+                       help="Keep every audio track as is, or write no audio (default: %(default)s)")
     parser.add_argument('--log-level', choices=['warning', 'error', 'fatal'],
                        default='warning', metavar='LEVEL',
                        help="Set logging verbosity level (default: %(default)s)")
@@ -263,11 +268,20 @@ time formats:
     else:
         raise ValueError("You must specify either --keep or --cut.")
 
-    # Default audio settings: include all tracks with lossless passthru
-    audio_settings: list[AudioExportSettings | None] = [AudioExportSettings(codec='passthru')] * len(source.audio_tracks)
+    audio_settings: list[AudioExportSettings | None] = []
+    if args.audio == 'passthru':
+        audio_settings = [AudioExportSettings(codec='passthru')] * len(source.audio_tracks)
     export_info = AudioExportInfo(output_tracks=audio_settings)
 
-    video_settings = VideoSettings(VideoExportMode.SMARTCUT, VideoExportQuality.NORMAL, 'copy')
+    quality = {
+        'low': VideoExportQuality.LOW,
+        'normal': VideoExportQuality.NORMAL,
+        'high': VideoExportQuality.HIGH,
+        'indistinguishable': VideoExportQuality.INDISTINGUISHABLE,
+        'near-lossless': VideoExportQuality.NEAR_LOSSLESS,
+        'lossless': VideoExportQuality.LOSSLESS,
+    }[args.quality]
+    video_settings = VideoSettings(VideoExportMode.SMARTCUT, quality, 'copy')
 
     progress = Progress()
 
